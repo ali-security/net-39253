@@ -6520,3 +6520,38 @@ func TestDialRaceResumesDial(t *testing.T) {
 	case <-successCh:
 	}
 }
+
+// TestTransportRejectsInvalidSettings verifies that a SETTINGS frame carrying
+// an out-of-range value (here SETTINGS_MAX_FRAME_SIZE=0) is rejected by the
+// client read loop instead of being silently accepted, which previously caused
+// the Transport to hang. Regression test for CVE-2026-33814 / golang/go#78476.
+//
+// The upstream regression test relies on the newer synctest-based
+// testClientConn framework, which does not exist in this version, so this is an
+// equivalent deterministic unit test that calls processSettingsNoWrite directly.
+func TestTransportRejectsInvalidSettings(t *testing.T) {
+	cc := &ClientConn{
+		t:    &Transport{},
+		henc: hpack.NewEncoder(new(bytes.Buffer)),
+	}
+	rl := &clientConnReadLoop{cc: cc}
+
+	// SETTINGS frame with a single setting: SETTINGS_MAX_FRAME_SIZE = 0,
+	// which is below the minimum allowed value of 16384.
+	payload := []byte{
+		0x00, byte(SettingMaxFrameSize), // setting id (uint16)
+		0x00, 0x00, 0x00, 0x00, // value (uint32) = 0
+	}
+	f := &SettingsFrame{
+		FrameHeader: FrameHeader{valid: true, Type: FrameSettings},
+		p:           payload,
+	}
+
+	err := rl.processSettingsNoWrite(f)
+	if err == nil {
+		t.Fatal("processSettingsNoWrite accepted SETTINGS_MAX_FRAME_SIZE=0; want connection error")
+	}
+	if ce, ok := err.(ConnectionError); !ok || ErrCode(ce) != ErrCodeProtocol {
+		t.Fatalf("processSettingsNoWrite returned %v (%T); want ConnectionError(PROTOCOL_ERROR)", err, err)
+	}
+}

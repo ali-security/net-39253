@@ -601,6 +601,26 @@ var tokenTests = []tokenTest{
 		`<p  =asd>`,
 		`<p =asd="">`,
 	},
+	{
+		"slash at end of unquoted attribute value",
+		`<p a="\">`,
+		`<p a="\">`,
+	},
+	{
+		"self-closing tag with attribute",
+		`<p a=/>`,
+		`<p a="/">`,
+	},
+	{
+		"duplicate attributes",
+		`<p foo="bar" foo="baz">`,
+		`<p foo="bar">`,
+	},
+	{
+		"duplicate attributes, different case",
+		`<p FOO="bar" foo="baz">`,
+		`<p foo="bar">`,
+	},
 }
 
 func TestTokenizer(t *testing.T) {
@@ -797,6 +817,14 @@ func TestReaderEdgeCases(t *testing.T) {
 			t.Errorf("i=%d: got %v, want %v", i, got, want)
 			continue
 		}
+	}
+}
+
+func TestSelfClosingTagValueConfusion(t *testing.T) {
+	z := NewTokenizer(strings.NewReader(`<p a=/>`))
+	tok := z.Next()
+	if tok != StartTagToken {
+		t.Fatalf("unexpected token type: got %s, want %s", tok, StartTagToken)
 	}
 }
 
